@@ -1,15 +1,8 @@
 package org.example;
-import com.google.gson.Gson;
-import com.google.gson.JsonArray;
-import com.google.gson.JsonObject;
-import java.io.BufferedReader;
-import java.io.IOException;
-import java.io.InputStreamReader;
-import java.nio.charset.StandardCharsets;
 import java.sql.*;
-import java.util.HashSet;
-import java.util.Objects;
-import java.util.Set;
+import java.util.Scanner;
+
+import static org.example.BooksCreate.*;
 
 public class BookManager {
     private static final String URL = "jdbc:postgresql://localhost:5432/java";
@@ -17,209 +10,98 @@ public class BookManager {
     private static final String PASSWORD = "123456";
 
     public static void main(String[] args) {
-
         try (Connection connection = DriverManager.getConnection(URL, USER, PASSWORD)) {
-            // Проверяем, существуют ли таблицы
-            if (tableExists(connection, "visitors")) {
-                createVisitorsTable(connection);
-            }
-            if (tableExists(connection, "books")) {
-                createBooksTable(connection);
-            }
-            if (tableExists(connection, "visitor_books")) {
-                createVisitorBooksTable(connection);
-            }
 
-            // Добавляем данные из JSON-файла
-            addVisitorsAndBooks(connection);
+            Scanner scanner = new Scanner(System.in);
+            int choice;
+            do {
+                System.out.println("Выберите действие:");
+                System.out.println("1. Получить отсортированный список книг по году издания");
+                System.out.println("2. Вывести книги младше 2000 года");
+                System.out.println("3. Добавить информацию о себе и любимые книги");
+                System.out.println("4. Вывести информацию о себе и любимые книги");
+                System.out.println("5. Выйти");
+                choice = scanner.nextInt();
+                scanner.nextLine(); // Очистка буфера
+
+                switch (choice) {
+                    case 1:
+                        getSortedBookList(connection);
+                        break;
+                    case 2:
+                       // getBooksBeforeYear2000(connection);
+                        break;
+                    case 3:
+                       // addPersonalInfo(connection);
+                        break;
+                    case 4:
+                      //  displayPersonalInfo(connection);
+                        break;
+                    case 5:
+                        dropTable(connection);
+                        break;
+                    case 6:
+                        System.out.println("Выход из программы.");
+                        break;
+                    case 7:
+                        // Проверяем, существуют ли таблицы
+                        if (tableExists(connection, "visitors")) {
+                            createVisitorsTable(connection);
+                        }
+                        if (tableExists(connection, "books")) {
+                            createBooksTable(connection);
+                        }
+                        if (tableExists(connection, "visitor_books")) {
+                            createVisitorBooksTable(connection);
+                        }
+
+                        // Добавляем данные из JSON-файла
+                        addVisitorsAndBooks(connection);
+                    default:
+                        System.out.println("Неверный выбор. Попробуйте еще раз.");
+                        break;
+                }
+            } while (choice != 7);
         } catch (SQLException e) {
             e.printStackTrace();
         }
     }
 
-    private static boolean tableExists(Connection connection, String tableName) throws SQLException {
+    static void dropTable(Connection connection) {
+        String dropBVTable = "DROP TABLE visitor_books";
+        String dropVisitorsTable = "DROP TABLE visitors";
+        String dropBooksTable = "DROP TABLE books";
+        try (Statement statement = connection.createStatement()) {
+            statement.executeUpdate(dropBVTable);
+            statement.executeUpdate(dropVisitorsTable);
+            statement.executeUpdate(dropBooksTable);
+            System.out.println("Tables 'visitors' and 'books' have been dropped.");
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+    }
+
+    static boolean tableExists(Connection connection, String tableName) throws SQLException {
         DatabaseMetaData metaData = connection.getMetaData();
         ResultSet resultSet = metaData.getTables(null, null, tableName, null);
         return !resultSet.next();
     }
 
-    private static void createVisitorsTable(Connection connection) throws SQLException {
-        String createTableQuery = "CREATE TABLE visitors (" +
-                "id SERIAL PRIMARY KEY," +
-                "name VARCHAR(255) NOT NULL," +
-                "surname VARCHAR(255) NOT NULL," +
-                "phone VARCHAR(20) NOT NULL," +
-                "subscribed BOOLEAN NOT NULL)";
-        try (Statement statement = connection.createStatement()) {
-            statement.executeUpdate(createTableQuery);
-            System.out.println("Таблица visitors создана.");
-        }
-    }
-
-    private static void createBooksTable(Connection connection) throws SQLException {
-        String createTableQuery = "CREATE TABLE books (" +
-                "id SERIAL PRIMARY KEY," +
-                "name VARCHAR(255) NOT NULL," +
-                "author VARCHAR(255) NOT NULL," +
-                "publishingYear INTEGER NOT NULL," +
-                "isbn VARCHAR(20) NOT NULL," +
-                "publisher VARCHAR(255) NOT NULL)";
-        try (Statement statement = connection.createStatement()) {
-            statement.executeUpdate(createTableQuery);
-            System.out.println("Таблица books создана.");
-        }
-    }
-
-    private static void createVisitorBooksTable(Connection connection) throws SQLException {
-        String createTableQuery = "CREATE TABLE visitor_books (" +
-                "visitor_id INTEGER NOT NULL," +
-                "book_id INTEGER NOT NULL," +
-                "FOREIGN KEY (visitor_id) REFERENCES visitors(id)," +
-                "FOREIGN KEY (book_id) REFERENCES books(id)," +
-                "PRIMARY KEY (visitor_id, book_id))";
-        try (Statement statement = connection.createStatement()) {
-            statement.executeUpdate(createTableQuery);
-            System.out.println("Таблица visitor_books создана.");
-        }
-    }
-
-    private static void addVisitorsAndBooks(Connection connection) throws SQLException {
-        String jsonData = readJsonFromFile();
-        if (jsonData == null) {
-            System.out.println("Error reading JSON file.");
-            return;
-        }
-
-        Gson gson = new Gson();
-        JsonArray jsonArray = gson.fromJson(jsonData, JsonArray.class);
-
-        Set<Integer> uniqueVisitorIds = new HashSet<>();
-        Set<Integer> uniqueBookIds = new HashSet<>();
-
-        for (int i = 0; i < jsonArray.size(); i++) {
-            JsonObject visitor = jsonArray.get(i).getAsJsonObject();
-
-            // Добавляем посетителя, если он уникален
-            int visitorId = addUniqueVisitor(connection, visitor);
-            if (visitorId != -1) {
-                uniqueVisitorIds.add(visitorId);
+    static void  getSortedBookList(Connection connection) {
+        String selectBooksQuery = "SELECT * FROM books ORDER BY publishingYear ASC";
+        try (PreparedStatement selectStatement = connection.prepareStatement(selectBooksQuery);
+             ResultSet resultSet = selectStatement.executeQuery()) {
+            while (resultSet.next()) {
+                int id = resultSet.getInt("id");
+                String name = resultSet.getString("name");
+                String author = resultSet.getString("author");
+                int publishingYear = resultSet.getInt("publishingYear");
+                String isbn = resultSet.getString("isbn");
+                String publisher = resultSet.getString("publisher");
+                System.out.printf("ID: %d, Name: %s, Author: %s, Publishing Year: %d, ISBN: %s, Publisher: %s%n", id, name, author, publishingYear, isbn, publisher);
             }
-
-            // Добавляем книги посетителя, если они уникальны
-            JsonArray favoriteBooks = visitor.getAsJsonArray("favoriteBooks");
-            for (int j = 0; j < favoriteBooks.size(); j++) {
-                JsonObject book = favoriteBooks.get(j).getAsJsonObject();
-                int bookId = addUniqueBook(connection, book);
-                if (bookId != -1) {
-                    uniqueBookIds.add(bookId);
-                    addVisitorBook(connection, visitorId, bookId);
-                }
-            }
-        }
-
-        System.out.printf("Уникальные посетители: %d%n", uniqueVisitorIds.size());
-        System.out.printf("Уникальные книги: %d%n", uniqueBookIds.size());
-    }
-
-    private static String readJsonFromFile() {
-        StringBuilder jsonContent = new StringBuilder();
-
-        try (BufferedReader reader = new BufferedReader(new InputStreamReader(
-                Objects.requireNonNull(BookManager.class.getResourceAsStream("/books.json")), StandardCharsets.UTF_8))) {
-            String line;
-            while ((line = reader.readLine()) != null) {
-                jsonContent.append(line);
-            }
-        } catch (IOException e) {
+        } catch (SQLException e) {
             e.printStackTrace();
-            return null;
-        }
-
-        return jsonContent.toString();
-    }
-
-    private static int addUniqueVisitor(Connection connection, JsonObject visitor) throws SQLException {
-        String name = visitor.get("name").getAsString();
-        String surname = visitor.get("surname").getAsString();
-        String phone = visitor.get("phone").getAsString();
-        boolean subscribed = visitor.get("subscribed").getAsBoolean();
-
-        String checkVisitorQuery = "SELECT id FROM visitors WHERE name = ? AND surname = ? AND phone = ?";
-        try (PreparedStatement checkStatement = connection.prepareStatement(checkVisitorQuery)) {
-            checkStatement.setString(1, name);
-            checkStatement.setString(2, surname);
-            checkStatement.setString(3, phone);
-            try (ResultSet resultSet = checkStatement.executeQuery()) {
-                if (resultSet.next()) {
-                    return resultSet.getInt("id");
-                }
-            }
-        }
-
-        String insertVisitorQuery = "INSERT INTO visitors (name, surname, phone, subscribed) VALUES (?, ?, ?, ?)";
-        try (PreparedStatement insertStatement = connection.prepareStatement(insertVisitorQuery, Statement.RETURN_GENERATED_KEYS)) {
-            insertStatement.setString(1, name);
-            insertStatement.setString(2, surname);
-            insertStatement.setString(3, phone);
-            insertStatement.setBoolean(4, subscribed);
-            int rowsAffected = insertStatement.executeUpdate();
-            if (rowsAffected > 0) {
-                try (ResultSet generatedKeys = insertStatement.getGeneratedKeys()) {
-                    if (generatedKeys.next()) {
-                        return generatedKeys.getInt(1);
-                    }
-                }
-            }
-        }
-        return -1;
-    }
-
-    private static int addUniqueBook(Connection connection, JsonObject book) throws SQLException {
-        String name = book.get("name").getAsString();
-        String author = book.get("author").getAsString();
-        int publishingYear = book.get("publishingYear").getAsInt();
-        String isbn = book.get("isbn").getAsString();
-        String publisher = book.get("publisher").getAsString();
-
-        String checkBookQuery = "SELECT id FROM books WHERE name = ? AND author = ? AND publishingYear = ? AND isbn = ? AND publisher = ?";
-        try (PreparedStatement checkStatement = connection.prepareStatement(checkBookQuery)) {
-            checkStatement.setString(1, name);
-            checkStatement.setString(2, author);
-            checkStatement.setInt(3, publishingYear);
-            checkStatement.setString(4, isbn);
-            checkStatement.setString(5, publisher);
-            try (ResultSet resultSet = checkStatement.executeQuery()) {
-                if (resultSet.next()) {
-                    return resultSet.getInt("id");
-                }
-            }
-        }
-
-        String insertBookQuery = "INSERT INTO books (name, author, publishingYear, isbn, publisher) VALUES (?, ?, ?, ?, ?)";
-        try (PreparedStatement insertStatement = connection.prepareStatement(insertBookQuery, Statement.RETURN_GENERATED_KEYS)) {
-            insertStatement.setString(1, name);
-            insertStatement.setString(2, author);
-            insertStatement.setInt(3, publishingYear);
-            insertStatement.setString(4, isbn);
-            insertStatement.setString(5, publisher);
-            int rowsAffected = insertStatement.executeUpdate();
-            if (rowsAffected > 0) {
-                try (ResultSet generatedKeys = insertStatement.getGeneratedKeys()) {
-                    if (generatedKeys.next()) {
-                        return generatedKeys.getInt(1);
-                    }
-                }
-            }
-        }
-        return -1;
-    }
-
-    private static void addVisitorBook(Connection connection, int visitorId, int bookId) throws SQLException {
-        String insertVisitorBookQuery = "INSERT INTO visitor_books (visitor_id, book_id) VALUES (?, ?)";
-        try (PreparedStatement insertStatement = connection.prepareStatement(insertVisitorBookQuery)) {
-            insertStatement.setInt(1, visitorId);
-            insertStatement.setInt(2, bookId);
-            insertStatement.executeUpdate();
         }
     }
 }
